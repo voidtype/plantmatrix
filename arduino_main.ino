@@ -1,3 +1,5 @@
+#include <StreamUtils.h>
+
 /**********************************
  * PLANT MATRIX main arduino code
     Copyright (C) 2021  Evan Pollack
@@ -42,14 +44,15 @@
  * re-implement wifi, and move the wifi config out of code, Make a basic error handler
  * Test this code thouroughly 
  */
- */
+
 
 #include <ArduinoJson.h>
 
 const int PUMP_PIN = 2;
 const int SOLENOID_PIN = 12;
-const int PURGE_PIN = 13;
-const int LED_PIN = 6;
+//TODO : switch back to led 6 purge 13
+const int PURGE_PIN = 6;
+const int LED_PIN = 13;
 const int PRESSURE_PIN = A0;
 //needs to be non-const and have a calibration cycle (NB calibration failure is noncritical as long as the pump has the pressure switch)
 const float offset = 0.468;
@@ -61,23 +64,46 @@ float previousPressure = 60;
 unsigned long previousMillis = 0;
 int solenoidState = HIGH;
 int pumpState = HIGH;
+int ledState = LOW;
+int pressureMax = 72;
+bool cacheInvalid = true;
+String _time = "default";
 
+void getSettings()
+{
+   if (Serial.available()) 
+  {
+    // Allocate the JSON document
+    // This one must be bigger than for the sender because it must store the strings
+    StaticJsonDocument<500> doc;
+    Serial.setTimeout(1000);
+    // Read the JSON document from the "link" serial port
+    ReadLoggingStream loggingClient(Serial, Serial);
+    DeserializationError err = deserializeJson(doc, loggingClient);
 
-
-
-// TODO: change to user config
-//String ssid     = "xxx"; //Wifi SSID
-//String password = "xxx"; //Wifi Password
-
-//String apiKeyIn = "xxx"; // API Key
-//const unsigned int writeInterval = 500; // write interval (in ms)
-
-// ASKSENSORS API host config
-//String host = "api.asksensors.com";  // API host name
-//String port = "80";      // port
-
-//int AT_cmd_time; 
-//boolean AT_cmd_result = false; 
+    if (err == DeserializationError::Ok) 
+    {
+      // Print the values
+      // (we must use as<T>() to resolve the ambiguity)
+      bpm = doc["b"].as<float>();
+      _time = doc["t"].as<String>();
+      duty = doc["d"].as<float>();
+      pressureMax = doc["p"].as<int>();
+      ledState = doc["l"].as<int>();
+      Serial.println(_time);
+    } 
+    else 
+    {
+      // Print error to the "debug" serial port
+      Serial.print("deserializeJson() returned ");
+      Serial.println(err.c_str());
+  
+      // Flush all bytes in the "link" serial port buffer
+      while (Serial.available() > 0)
+        Serial.read();
+    }
+  }
+}
 
 
 long onPeriod(){
@@ -98,7 +124,7 @@ void setup() {
   pinMode(PUMP_PIN, OUTPUT);
   digitalWrite(PUMP_PIN,HIGH);
   pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN,HIGH);
+  digitalWrite(LED_PIN,LOW);
   pinMode(SOLENOID_PIN, OUTPUT);
   digitalWrite(SOLENOID_PIN,HIGH);
   Serial.setTimeout(50);
@@ -123,6 +149,17 @@ void loop() {
   float pressureAverage = (pressureValue + previousPressure) / 2.0;
   previousPressure = pressureValue;
 
+  // get settings cache from serial every 10 seconds
+  if ((currentMillis-previousMillis)%10000 < 1000 && cacheInvalid && Serial.available())
+  {
+    getSettings();
+    digitalWrite(LED_PIN,ledState);
+    cacheInvalid = false;
+  }
+  else if ((currentMillis-previousMillis)%10000 > 5000)
+  {
+    cacheInvalid = true;
+  }
 
   bool on = ((currentMillis-previousMillis) < onPeriod());
   if (on){
@@ -159,7 +196,7 @@ void loop() {
       //url+= "&module2=1";
     pumpState = HIGH; 
   }
-  else if (pressureAverage < 72 && pumpState == HIGH)  //keep running up to 60 psi
+  else if (pressureAverage < pressureMax && pumpState == HIGH)  //keep running up to 60 psi
   {
     pumpState = HIGH;
   }
