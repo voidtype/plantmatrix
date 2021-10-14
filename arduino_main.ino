@@ -51,8 +51,8 @@
 const int PUMP_PIN = 2;
 const int SOLENOID_PIN = 12;
 //TODO : switch back to led 6 purge 13
-const int PURGE_PIN = 6;
-const int LED_PIN = 13;
+const int PURGE_PIN = 13;
+const int LED_PIN = 6;
 const int PRESSURE_PIN = A0;
 //needs to be non-const and have a calibration cycle (NB calibration failure is noncritical as long as the pump has the pressure switch)
 const float offset = 0.468;
