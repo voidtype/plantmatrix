@@ -18,6 +18,9 @@
 #include <WiFiClient.h>
 #include <ArduinoJson.h>
 
+#include <StreamUtils.h>
+
+
 #include "config.h";
 
 //for handling  construction of time from string
@@ -31,51 +34,90 @@ const String DEFAULT_TIME = "2020-01-01T00:00:01.000000+10:00";
 String _time = DEFAULT_TIME;
 String bpm = "0.25";
 String duty = "0.004"; 
-String ledState = "1";
+String ledSetting = "255";
 String pressureMax = "72";
+
+String psi;
+String solenoidState;
+String pumpState;
+String ledState;
+
+const int REFRESH_PERIOD = 10000;
+unsigned long time_now;
+
+bool stateUpdated = false;
 
 void setup() {
 
   Serial.begin(115200);
   // Serial.setDebugOutput(true);
 
-  Serial.println();
-  Serial.println();
-  Serial.println();
+  //Serial.println();
+  //Serial.println();
+  //Serial.println();
 
   for (uint8_t t = 4; t > 0; t--) {
-    Serial.printf("[SETUP] WAIT %d...\n", t);
+    //Serial.printf("[SETUP] WAIT %d...\n", t);
     Serial.flush();
     delay(1000);
   }
+  
 
  // WiFi.mode(WIFI_STA);
  WiFi.begin(WIFI_SSID,WIFI_PASSWORD);
   while ((WiFi.status() != WL_CONNECTED)) {
-    Serial.print(".");
+    //Serial.print(".");
     delay(200);
 
   }
  _setTime();
+   time_now = millis();
+
 }
 
-void loop() {
-  // wait for WiFi connection
+void postState(){
+  String payload = webGetter("http://192.168.1.42:81/readings/?device=954f33b2-096b-4000-aae7-35dcdc0b28b4&ledState="+ledState+"&pumpState="+pumpState+"&solenoidState="+solenoidState+"&psi="+psi);
+  //invalidate the state Update if we've sent it
+  if (payload != "fff"){
+    stateUpdated = false;
+  }
+  
+}
+
+void _main(){
+  // don't bother executing yet if we've lost wifi
   if ((WiFi.status() == WL_CONNECTED)) {
-    
+    //get config from django server
     setConfig();
+    //the input buffer should be clear,so it should be safe to send config to arduino
+      sendConfig();
     if( _time == DEFAULT_TIME){
       _setTime();
     }
+    //if state has been updated, post it to the django server
+    if (stateUpdated){
+      postState();
+    }
+    if (Serial.available()){
+      //get the state from esp
+      getState();
 
+    }
   }
-  sendConfig();
-  delay(10000);
+}
+
+void loop() {
+  //nb REFRESH_PERIOD = 10000
+  if(millis() > time_now + REFRESH_PERIOD){
+      time_now = millis();
+      _main();
+  }
+
 }
 
 void setConfig(){
   
-          String payload = webGetter("https://c7aa99eb-dcff-46d5-bde3-303cad81eeef.mock.pstmn.io/gow");
+          String payload = webGetter("http://192.168.1.42:81/configs/?device=954f33b2-096b-4000-aae7-35dcdc0b28b4");
          // Serial.println(payload);
           StaticJsonDocument<512> doc;
          DeserializationError err = deserializeJson(doc, payload);
@@ -84,10 +126,10 @@ void setConfig(){
             // Print the values
             // (we must use as<T>() to resolve the ambiguity)
             //Serial.print("datetime = ");
-            duty = doc["duty"].as<String>();
-            bpm = doc["bpm"].as<String>();
-            ledState = doc["ledState"].as<String>();
-            pressureMax = doc["pressureMax"].as<String>();
+            duty = doc[0]["duty"].as<String>();
+            bpm = doc[0]["bpm"].as<String>();
+            ledSetting = doc[0]["ledState"].as<String>();
+            pressureMax = doc[0]["pressureMax"].as<String>();
             
           } 
           else 
@@ -103,8 +145,8 @@ void setConfig(){
 }
 
 String webGetter(String URL){
-    WiFiClientSecure client;
-    client.setInsecure(); 
+    WiFiClient client;
+//    client.setInsecure(); 
     HTTPClient http;
 
     //Serial.print("[HTTP] begin...\n");
@@ -125,12 +167,12 @@ String webGetter(String URL){
           return http.getString();
          } else {
           return "fff";
-        Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+        //Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
       }
 
       http.end();
     } else {
-      Serial.printf("[HTTP} Unable to connect\n");
+      //Serial.printf("[HTTP} Unable to connect\n");
       return "fff";
     }
 }
@@ -139,7 +181,7 @@ String webGetter(String URL){
 //renamed as there is a conflict with the contained time library function
 void _setTime(){
 
-          String payload = webGetter( "https://worldtimeapi.org/api/timezone/Australia/Sydney");
+          String payload = webGetter( "http://worldtimeapi.org/api/timezone/Australia/Sydney");
          // Serial.println(payload);
           StaticJsonDocument<512> doc;
          DeserializationError err = deserializeJson(doc, payload);
@@ -162,17 +204,47 @@ void _setTime(){
         //strptime("2020-01-01T00:00:01.000000+10:00", "%Y-%m-%dT%H:%M:%S", &tm);
         //setTime(mktime(&tm));
         setTime(_time.toInt());
-        //Serial.println(now());
         
 
 }
 
 void sendConfig(){
   StaticJsonDocument<200> doc;
+  doc["a"] = "u";
   doc["b"] = bpm;
-  doc["t"] = String(now());
+  //doc["t"] = String(now());
   doc["d"] = duty;
   doc["p"] = pressureMax;
-  doc["l"] = ledState;
+  doc["l"] = ledSetting;
   serializeJson(doc, Serial);
+  Serial.flush();
+}
+
+void getState(){
+   if (Serial.available()) 
+  {
+    // Allocate the JSON document
+    StaticJsonDocument<500> doc;
+    Serial.setTimeout(100);
+    // Read the JSON document from the "link" serial port
+    ReadLoggingStream loggingClient(Serial, Serial);
+    DeserializationError err = deserializeJson(doc, loggingClient);
+
+    if (err == DeserializationError::Ok && doc["a"]=="e") 
+    {
+      // Print the values
+      // (we must use as<T>() to resolve the ambiguity)
+      psi = doc["psi"].as<String>();
+      solenoidState = doc["s"].as<String>();
+      pumpState = doc["p"].as<String>();
+      ledState = doc["l"].as<String>();
+      stateUpdated = true;
+    } 
+    {
+  
+      // If there's garbag, flush all bytes in the serial  buffer
+      while (Serial.available() > 0)
+        Serial.read();
+    }
+  }
 }
