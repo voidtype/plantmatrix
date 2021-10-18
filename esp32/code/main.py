@@ -8,7 +8,7 @@ from exceptions import UploadError
 from uploader import make_request
 from machine import Timer
 
-DEVICE_UUID = "bcbd7603-0e73-495c-af97-f138704990b8"
+DEVICE_UUID = "954f33b2-096b-4000-aae7-35dcdc0b28b4"
 
 def savePicture(dUUID=DEVICE_UUID):
     rq = make_request({"device":DEVICE_UUID},camera.capture())
