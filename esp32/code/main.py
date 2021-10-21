@@ -8,18 +8,18 @@ from exceptions import UploadError
 from uploader import make_request
 from machine import Timer
 
-DEVICE_UUID = "954f33b2-096b-4000-aae7-35dcdc0b28b4"
+DEVICE_UUID = "48a6118c-f22e-48b9-b4c6-3bcdd6d8641d"
 
 def savePicture(dUUID=DEVICE_UUID):
     rq = make_request({"device":DEVICE_UUID},camera.capture())
-    http_response = urequests.post("http://192.168.1.42:81/upload",headers=rq[1],data=rq[0])
+    http_response = urequests.post("http://144.202.8.17:81/upload",headers=rq[1],data=rq[0])
     if http_response.status_code == 204 or http_response.status_code == 200:
         print('Uploaded request')
     else:
-        raise UploadError(http_response)
+        print(http_response.text)
     http_response.close()
     return http_response
 
 savePicture()
 tim = Timer(0)
-tim.init(period=60000, mode=Timer.PERIODIC, callback=savePicture)
+tim.init(period=10000, mode=Timer.PERIODIC, callback=savePicture)

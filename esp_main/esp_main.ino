@@ -46,6 +46,7 @@ const int REFRESH_PERIOD = 10000;
 unsigned long time_now;
 
 bool stateUpdated = false;
+bool configUpdated = false;
 
 void setup() {
 
@@ -76,7 +77,7 @@ void setup() {
 }
 
 void postState(){
-  String payload = webGetter("http://192.168.1.42:81/readings/?device=954f33b2-096b-4000-aae7-35dcdc0b28b4&ledState="+ledState+"&pumpState="+pumpState+"&solenoidState="+solenoidState+"&psi="+psi);
+  String payload = webGetter("http://144.202.8.17:81/readings/?device=48a6118c-f22e-48b9-b4c6-3bcdd6d8641d&ledState="+ledState+"&pumpState="+pumpState+"&solenoidState="+solenoidState+"&psi="+psi);
   //invalidate the state Update if we've sent it
   if (payload != "fff"){
     stateUpdated = false;
@@ -90,7 +91,10 @@ void _main(){
     //get config from django server
     setConfig();
     //the input buffer should be clear,so it should be safe to send config to arduino
+    if(configUpdated)
+    {
       sendConfig();
+    }
     if( _time == DEFAULT_TIME){
       _setTime();
     }
@@ -117,19 +121,30 @@ void loop() {
 
 void setConfig(){
   
-          String payload = webGetter("http://192.168.1.42:81/configs/?device=954f33b2-096b-4000-aae7-35dcdc0b28b4");
+          String payload = webGetter("http://144.202.8.17:81/configs/48a6118c-f22e-48b9-b4c6-3bcdd6d8641d/");
          // Serial.println(payload);
           StaticJsonDocument<512> doc;
          DeserializationError err = deserializeJson(doc, payload);
         if (err == DeserializationError::Ok) 
           {
-            // Print the values
-            // (we must use as<T>() to resolve the ambiguity)
-            //Serial.print("datetime = ");
-            duty = doc[0]["duty"].as<String>();
-            bpm = doc[0]["bpm"].as<String>();
-            ledSetting = doc[0]["ledState"].as<String>();
-            pressureMax = doc[0]["pressureMax"].as<String>();
+            String _duty = doc["duty"].as<String>();
+            String _bpm = doc["bpm"].as<String>();
+            String _ledSetting = doc["ledState"].as<String>();
+            String _pressureMax = doc["pressureMax"].as<String>();
+
+            if(!configUpdated){
+            configUpdated = (duty != _duty || 
+                              bpm != _bpm ||
+                              ledSetting != _ledSetting ||
+                              pressureMax != _pressureMax);
+            }
+
+            if (configUpdated){
+              duty = _duty;
+              bpm = _bpm;
+              ledSetting = _ledSetting;
+              pressureMax = _pressureMax;
+            }
             
           } 
           else 
@@ -141,7 +156,6 @@ void setConfig(){
             // Flush all bytes in the "link" serial port buffer
 
         }
-        //Serial.println(duty+" "+bpm);
 }
 
 String webGetter(String URL){
@@ -230,16 +244,23 @@ void getState(){
     ReadLoggingStream loggingClient(Serial, Serial);
     DeserializationError err = deserializeJson(doc, loggingClient);
 
-    if (err == DeserializationError::Ok && doc["a"]=="e") 
+    if (err == DeserializationError::Ok) 
     {
-      // Print the values
-      // (we must use as<T>() to resolve the ambiguity)
-      psi = doc["psi"].as<String>();
-      solenoidState = doc["s"].as<String>();
-      pumpState = doc["p"].as<String>();
-      ledState = doc["l"].as<String>();
-      stateUpdated = true;
-    } 
+     if (doc["a"] == "e")
+      {
+        // Print the values
+        // (we must use as<T>() to resolve the ambiguity)
+        psi = doc["psi"].as<String>();
+        solenoidState = doc["s"].as<String>();
+        pumpState = doc["p"].as<String>();
+        ledState = doc["l"].as<String>();
+        stateUpdated = true;
+      } 
+      else if (doc["a"]=="ack")
+      {
+        configUpdated = false;
+      }
+    }
     {
   
       // If there's garbag, flush all bytes in the serial  buffer

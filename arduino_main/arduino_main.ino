@@ -69,6 +69,8 @@ int pressureMax = 72;
 bool cacheInvalid = true;
 String _time = "default";
 
+bool stateDue = true;
+
 void getSettings()
 {
    if (Serial.available()) 
@@ -91,16 +93,21 @@ void getSettings()
       pressureMax = doc["p"].as<int>();
       ledState = doc["l"].as<int>();
       //Serial.println(_time);
-
+      sendAck();
     } 
     // Flush all bytes in the "link" serial port buffer
     while (Serial.available() > 0)
       Serial.read();
   
-    delay(300);
-    sendState();
 
   }
+}
+
+void sendAck(){
+  StaticJsonDocument<128> ackDoc;
+  ackDoc["a"] = "ack";
+  serializeJson(ackDoc, Serial);
+  Serial.flush();
 }
 
 void sendState(){
@@ -163,10 +170,17 @@ void loop() {
       getSettings();
     analogWrite(LED_PIN,ledState);
     cacheInvalid = false;
+    stateDue = true;
   }
   else if ((currentMillis-previousMillis)%10000 > 5000)
   {
     cacheInvalid = true;
+  }
+
+  if (stateDue && ((currentMillis-previousMillis)%10000 > 5000))
+  {
+   sendState();
+   stateDue = false;
   }
 
   bool on = ((currentMillis-previousMillis) < onPeriod());

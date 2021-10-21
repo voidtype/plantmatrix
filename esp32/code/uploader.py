@@ -35,8 +35,7 @@ def make_request(data, image=None):
     body = b'\r\n'.join(lines)
 
     headers = {
-        'content-type': 'multipart/form-data; boundary=' + boundary,
-        'content-length': str(len(body))}
+        'Content-Type': 'multipart/form-data; boundary=' + boundary}
     return body, headers
 
 
